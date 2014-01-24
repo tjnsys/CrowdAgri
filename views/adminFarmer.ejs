@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title><%= title %></title>
+    <link rel='stylesheet' href='/stylesheets/style.css' />
+  </head>
+  <body>
+    【農家登録】
+    <form name="reg_farmer" action="/1.0/farmer" method="POST" enctype="multipart/form-data">
+      名前：<input type="text" name="name"><br>
+      住所：<input type="text" name="addr"><br>
+      電話：<input type="text" name="tel"><br>
+      メール：<input type="text" name="mail"><br>
+      ロケーション：<input type="text" name="location"><br>
+      規模：<input type="text" name="size"><br>
+      作物：<input type="text" name="products"><br>
+      創業：<input type="text" name="since"><br>
+      写真：<input type="file" name="image"><br>
+      <input type="submit" value="登録">
+    </form><br>
+    <hr>
+    【ジョブ登録】
+    <form name="reg_travail" action="/1.0/travail" method="POST">
+      <table>
+        <% farmers.forEach(function(item) { %>
+        <tr><td><input type="radio" name="farmer_id" value="<%=item["_id"].valueOf()%>"><%= JSON.stringify(item) %></td></tr>
+        <% }) %>
+      </table>
+      開始：<input type="text" name="date_start"><br>
+      終了：<input type="text" name="date_end"><br>
+      種別：<select name="type">
+<option>種まき</option>
+<option>草取り</option>
+<option>見回り</option>
+<option>収穫</option>
+<option>箱詰め</option>
+</select><br>
+      人数：<input type="text" name="size"><br>
+      宿あり：<input type="checkbox" name="room"><br>
+      飯あり：<input type="checkbox" name="meal"><br>
+      土産あり：<input type="checkbox" name="souvenir"><br>
+      <input type="submit" value="登録">
+    </form><br>
+    <hr>
+    【ジョブ一覧】
+    <table>
+      <% travails.forEach(function(item) { %>
+      <tr><td><%= JSON.stringify(item) %></td></tr>
+      <% }) %>
+    </table>
+  </body>
+</html>

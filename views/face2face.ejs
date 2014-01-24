@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html><head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  <title>顔合わせカメラ</title>
+<script src="http://maps.google.com/maps/api/js?v=3&sensor=false" type="text/javascript" charset="UTF-8"></script>
+<script type="text/javascript">
+var map;
+function createMap(x, y) {
+  var latlng = new google.maps.LatLng(x, y);
+  var opts = {
+    zoom: 6,
+    mapTypeId: google.maps.MapTypeId.ROADMAP,
+    center: latlng
+  };
+  map = new google.maps.Map(document.getElementById("map"), opts);
+}
+var helpers = {};
+function changeitem(form) {
+  var options = form.counterpart.options;
+  var index = form.counterpart.selectedIndex;
+  var value = options[index].value;
+  var span = document.getElementById("remoteinfo");
+  var helper = helpers[value];
+  span.innerHTML = "<table>" + 
+  "<tr><td>名前：</td><td>" + helper["name"] +  "</td></tr>" +
+  "<tr><td>住所：</td><td>" + helper["addr"] +  "<br><div id='map'></div></td></tr>" +
+  "<tr><td>電話番号：</td><td>" + helper["tel"] +  "</td></tr>" +
+  "<tr><td>メール：</td><td>" + helper["mail"] +  "</td></tr>" +
+  "<tr><td>年齢：</td><td>" + getAge(helper["birthday"]) +  "歳</td></tr>" +
+  "<tr><td>コメント：</td><td>" + helper["comment"] +  "</td></tr>" +
+  "<tr><td colspan=2><img src='" + helper["imageURL"] +  "' width=250></td></tr>" +
+  "</table>";
+  //createMap(39,138);
+}
+function getAge(birthday){
+  var today = new Date();
+  today = today.getFullYear()*10000+today.getMonth()*100+100+today.getDate();
+  return Math.floor((today-parseInt(birthday))/10000);
+}
+
+<% helpers.forEach(function(helper) { %>
+  <% var id = helper["_id"].valueOf(); %>
+  helpers["<%=id%>"] = {};
+  <% for (var key in helper) { %>
+    helpers["<%=id%>"]["<%=key%>"] = "<%=helper[key]%>";
+  <% } %>
+<% }) %>
+</script>
+</head>
+<body onresize="resizeRemoteVideo();" onload="init();">
+  <form>
+    <select name="counterpart" onchange="changeitem(this.form);">
+      <option value="" selected></option>
+      <% helpers.forEach(function(item) { %>
+        <option value="<%=item["_id"].valueOf()%>"><%= item["name"] %></option>
+      <% }) %>
+    </select>さんとの顔合わせ
+  </form>
+  <button type="button" id="start_video_button" onclick="startVideo();">ビデオ映像の転送を開始</button>
+
+	<!--<button type="button" id="start_voice_button" onclick="startVoice();">Start voice only</button>-->
+	<!--<button type="button" id="start_screen_button" onclick="startScreen();">Start screen</button>-->
+  <!--<button type="button" id="stop_video_button" onclick="stopVideo();" disabled="">Stop video</button>-->
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <button type="button" id="connect_button" onclick="connect();" disabled="">接続</button>
+  <button type="button" id="hangup_button" onclick="hangUp();" disabled="">切断</button>
+<!--
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  Press F11 to <a href="javascript:void(0);" onclick="toggleFullScreen();return false;">FullScreen.</a> 
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="http://192.241.166.45/help.html" target="_blank">Help</a>
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="http://192.241.166.45/rtc.html">Back to Top</a>
+  &nbsp;&nbsp;&nbsp;&nbsp;
+-->
+  <br>
+  <div style="position: relative;">
+  <video id="webrtc-remotevid" autoplay="" style="position: absolute; top: 0px; left: 0px; width: 800px; height: 600px; border: 1px solid black;"></video>
+  <audio id="webrtc-remoteaid" autoplay=""></audio>
+  <video id="webrtc-sourcevid" autoplay="" style="position: absolute; top: 0px; width: 160px; height: 120px; border: 1px solid black;"></video>
+  <span id="remoteinfo" style="position: absolute; top: 0px; left: 810px;"></span>
+  </div>
+
+  <script src="/javascripts/socket.io.js"></script>
+  <script>
+  // create socket
+  var channelReady = false;
+
+  var sourcevid = document.getElementById('webrtc-sourcevid');
+  var remotevid = document.getElementById('webrtc-remotevid');
+  var remoteaid = document.getElementById('webrtc-remoteaid');
+  var localStream = null;
+  var localVideoOnlyStream = null;
+  var localAudioOnlyStream = null;
+  var peerConn = null;
+  var started = false;
+  var mediaConstraints = {'mandatory': {
+                          'OfferToReceiveAudio':true, 
+                          'OfferToReceiveVideo':true }};
+  var isVideoMuted = false;
+  var socket = io.connect('http://192.241.166.45:1341/');
+  channelReady = true;
+
+  function init() {
+   sourcevid = document.getElementById('webrtc-sourcevid');
+   remotevid = document.getElementById('webrtc-remotevid');
+   remoteaid = document.getElementById('webrtc-remoteaid');
+   started = false;
+  }
+
+  // ----- multi room ----
+  function getRoomName() {
+    var url = document.location.href;
+    console.log("url = " + url);
+    var args = url.split('?');
+    if (args.length > 1) {
+      var room = args[1];
+      console.log("room = " + room);
+      if (room != "") {
+        return room;
+      }
+    }
+
+    return "_defaultroom";
+  }
+
+  // resize video
+  function resizeRemoteVideo() {
+return;
+    new_width = 640;
+    new_height = 480;
+    screen_width = window.innerWidth - 2;
+    screen_height = window.innerHeight - 2 - 50;
+    new_width = screen_width;
+    new_height = screen_height;
+
+    remotevid.style.width = new_width + 'px';
+    remotevid.style.height = new_height + 'px';
+  }
+
+  // fullscreen
+  function toggleFullScreen() {
+    if (document.webkitIsFullScreen) {
+      document.webkitCancelFullScreen();
+    }
+    else {
+      document.documentElement.webkitRequestFullScreen();
+    }
+  }
+
+  function updateButtons() {
+    if (isLocalStreamStarted()) {
+      document.getElementById('start_video_button').disabled = true;
+      //document.getElementById('start_voice_button').disabled = true;
+      //document.getElementById('start_screen_button').disabled = true;
+      //document.getElementById('stop_video_button').disabled = false;
+    }
+    else {
+      document.getElementById('start_video_button').disabled = false;
+      //document.getElementById('start_voice_button').disabled = false;
+      //document.getElementById('start_screen_button').disabled = false;
+      //document.getElementById('stop_video_button').disabled = true;
+    }
+
+    if (isPeerStarted()) {
+      document.getElementById('hangup_button').disabled = false;
+    }
+    else {
+      document.getElementById('hangup_button').disabled = true;
+    }
+
+    if ( (! isPeerStarted()) && (isLocalStreamStarted()) ) {
+      document.getElementById('connect_button').disabled = false;
+    }
+    else {
+      document.getElementById('connect_button').disabled = true;
+    }
+  }
+
+  function isPeerStarted() {
+    if (peerConn) {
+      return true;
+    }
+    else {
+      return false;
+    }
+  }
+
+  function isLocalStreamStarted() {
+    if ( (localStream) || (localVideoOnlyStream) || (localAudioOnlyStream) ) {
+      return true;
+    }
+    else {
+      return false;
+    }
+  }
+
+
+  // get the local video up
+  function startVideo() {
+      navigator.getUserMedia = navigator.getUserMedia || navigator.webkitGetUserMedia || window.navigator.mozGetUserMedia || navigator.msGetUserMedia;
+      window.URL = window.URL || window.webkitURL;
+
+      navigator.getUserMedia({video: true, audio: false}, successCallback, errorCallback);
+      function successCallback(stream) {
+//alert('media1');
+          localVideoOnlyStream = stream;
+//alert('media11');
+//alert('source video ' + sourcevid);
+          if (sourcevid.mozSrcObject) {
+//alert('media12');
+            sourcevid.mozSrcObject = stream;
+            sourcevid.play();
+//alert('media13');
+          } else {
+//alert('media20');
+            try {
+//alert('media2');
+              sourcevid.src = window.URL.createObjectURL(stream);
+              sourcevid.play();
+
+              navigator.getUserMedia({video: true, audio: true}, successCallback2, errorCallback);
+//alert('media3');
+              function successCallback2(stream) {
+//alert('media4');
+                localStream = stream;
+                updateButtons();
+              }
+            } catch(e) {
+              console.log("Error setting video src: ", e);
+            }
+          }
+      }
+      function errorCallback(error) {
+          updateButtons();
+          console.error('An error occurred: [CODE ' + error.code + ']');
+          return;
+      }
+
+      //navigator.getUserMedia({video: true, audio: true}, successCallback2, errorCallback);
+      //function successCallback2(stream) {
+      //    localStream = stream;
+      //    updateButtons();
+      //}
+  }
+
+  // get the local microphone
+  function startVoice() {
+      navigator.getUserMedia = navigator.getUserMedia || navigator.webkitGetUserMedia || window.navigator.mozGetUserMedia || navigator.msGetUserMedia;
+      window.URL = window.URL || window.webkitURL;
+
+      navigator.getUserMedia({video: false, audio: true}, successCallback, errorCallback);
+      function successCallback(stream) {
+          localStream = stream;
+          localVideoOnlyStream = null;
+          if (sourcevid.mozSrcObject) {
+            sourcevid.mozSrcObject = stream;
+            sourcevid.play();
+          } else {
+            try {
+              sourcevid.src = window.URL.createObjectURL(stream);
+              sourcevid.play();
+            } catch(e) {
+              console.log("Error setting video src: ", e);
+            }
+          }
+          updateButtons();
+      }
+      function errorCallback(error) {
+          updateButtons();
+          console.error('An error occurred: [CODE ' + error.code + ']');
+          return;
+      }
+  }
+
+
+  // get the local video up
+  function startScreen() {
+      navigator.getUserMedia = navigator.getUserMedia || navigator.webkitGetUserMedia || window.navigator.mozGetUserMedia || navigator.msGetUserMedia;
+      window.URL = window.URL || window.webkitURL;
+
+      width = window.screen.width;
+      height = window.screen.height;
+      console.log('Screen = ' + width + ' x ' + height);
+
+      var gumConstraints = {
+        video : {
+                mandatory : {
+                        chromeMediaSource : "screen",
+                        maxWidth : width,
+                        maxHeight : height
+                },
+                optional : []
+        },
+        audio : false
+      };
+      navigator.getUserMedia(gumConstraints, successCallback, errorCallback);
+      function successCallback(stream) {
+          localStream = stream;
+          if (sourcevid.mozSrcObject) {
+            sourcevid.mozSrcObject = stream;
+            sourcevid.play();
+          } else {
+            try {
+              sourcevid.src = window.URL.createObjectURL(stream);
+              sourcevid.play();
+            } catch(e) {
+              console.log("Error setting video src: ", e);
+            }
+          }
+
+          // get audio only stream
+          navigator.getUserMedia({video: false, audio: true}, successCallback3, errorCallback);
+          function successCallback3(stream) {
+            localAudioOnlyStream = stream;
+            updateButtons();
+          }
+      }
+      function errorCallback(error) {
+        updateButtons();
+        console.error('An error occurred: [CODE ' + error.code + ']');
+        return;
+      }
+  }
+
+
+  // stop local video
+  function stopVideo() {
+    if (sourcevid.mozSrcObject) {
+      sourcevid.mozSrcObject.stop();
+      sourcevid.src = null;
+      if(localVideoOnlyStream) {
+        localVideoOnlyStream.stop();
+        localVideoOnlyStream = null;
+      }
+      if(localAudioOnlyStream) {
+        localVideoOnlyStream.stop();
+        localVideoOnlyStream = null;
+      }
+    } else {
+      sourcevid.src = "";
+      localStream.stop();
+      localStream = null;
+      if(localVideoOnlyStream) {
+        localVideoOnlyStream.stop();
+        localVideoOnlyStream = null;
+      }
+      if(localAudioOnlyStream) {
+        localAudioOnlyStream.stop();
+        localAudioOnlyStream = null;
+      }
+    } 
+    updateButtons();
+  }
+
+  // send SDP via socket connection
+  function setLocalAndSendMessage(sessionDescription) {
+    peerConn.setLocalDescription(sessionDescription);
+    console.log("Sending: SDP");
+    console.log(sessionDescription);
+    socket.json.send(sessionDescription);
+  }
+
+  function createOfferFailed() {
+    console.log("Create Answer failed");
+  }
+
+  // start the connection upon user request
+  function connect() {
+//alert('started=' + started + '  localStream=' + localStream + 'channelReady=' + channelReady);
+    if (!started && localStream && channelReady) {
+      createPeerConnection();
+      started = true;
+      peerConn.createOffer(setLocalAndSendMessage, createOfferFailed, mediaConstraints);
+    } else {
+      alert("Local stream not running yet - try again.");
+    } 
+
+    updateButtons();
+  }
+
+  // stop the connection upon user request
+  function hangUp() {
+    console.log("Hang up.");    
+    socket.json.send({type: "bye"});
+    stop();
+    updateButtons();
+  }
+
+  function stop() {
+    peerConn.close();
+    peerConn = null;
+    started = false;    
+  }
+
+  // socket: channel connected
+  socket.on('connect', onChannelOpened)
+        .on('message', onMessage);
+
+  function onChannelOpened(evt) {
+    console.log('Channel opened.');
+//alert('channel ready');
+    channelReady = true;
+
+    // ---- multi room ----
+    var roomname = getRoomName();
+    socket.emit('enter', roomname);
+    console.log("enter room=", roomname);
+  }
+
+  function createAnswerFailed() {
+    console.log("Create Answer failed");
+  }
+  // socket: accept connection request
+  function onMessage(evt) {
+    //console.log("onmessage evt=" + JSON.stringify(evt));
+    if (evt.type === 'offer') {
+      console.log("Received offer...")
+      if (!started) {
+        createPeerConnection();
+        started = true;
+      }
+      console.log('Creating remote session description...' );
+      peerConn.setRemoteDescription(new RTCSessionDescription(evt));
+      console.log('Sending answer...');
+      peerConn.createAnswer(setLocalAndSendMessage, createAnswerFailed, mediaConstraints);
+
+      updateButtons();
+    } else if (evt.type === 'answer' && started) {
+      console.log('Received answer...');
+      console.log('Setting remote session description...' );
+      peerConn.setRemoteDescription(new RTCSessionDescription(evt));
+
+    } else if (evt.type === 'candidate' && started) {
+      console.log('Received ICE candidate...');
+      var candidate = new RTCIceCandidate({sdpMLineIndex:evt.sdpMLineIndex, sdpMid:evt.sdpMid, candidate:evt.candidate});
+      console.log(candidate);
+      peerConn.addIceCandidate(candidate);
+
+    } else if (evt.type === 'bye' && started) {
+      console.log("Received bye");
+      stop();
+      updateButtons();
+    }
+  }
+
+  function createPeerConnection() {
+    console.log("Creating peer connection");
+    RTCPeerConnection = webkitRTCPeerConnection || mozRTCPeerConnection;
+    var pc_config = {"iceServers":[{"url":"turn:192.241.166.45:3478", "username":"turnuser", "credential":"turnpassword"}]};
+    try {
+      peerConn = new RTCPeerConnection(pc_config);
+    } catch (e) {
+      console.log("Failed to create PeerConnection, exception: " + e.message);
+    }
+    // send any ice candidates to the other peer
+    peerConn.onicecandidate = function (evt) {
+      if (evt.candidate) {
+        console.log('Sending ICE candidate...');
+        console.log(evt.candidate);
+        socket.json.send({type: "candidate",
+                          sdpMLineIndex: evt.candidate.sdpMLineIndex,
+                          sdpMid: evt.candidate.sdpMid,
+                          candidate: evt.candidate.candidate});
+      } else {
+        console.log("End of candidates.");
+      }
+    };
+    console.log('Adding local stream...');
+    peerConn.addStream(localStream);
+    if(localAudioOnlyStream) {
+      peerConn.addStream(localAudioOnlyStream);
+    }
+
+    peerConn.addEventListener("addstream", onRemoteStreamAdded, false);
+    peerConn.addEventListener("removestream", onRemoteStreamRemoved, false)
+
+    // when remote adds a stream, hand it on to the local video element
+    function onRemoteStreamAdded(event) {
+      console.log("Added remote stream");
+      var stream = event.stream;
+      if (stream.getVideoTracks().length > 0) {
+        console.log("Added remote video stream");
+        remotevid.src = window.URL.createObjectURL(event.stream);
+        resizeRemoteVideo();
+      }
+      else if (stream.getAudioTracks().length > 0) {
+        console.log("Added remote audio stream");
+        remoteaid.src = window.URL.createObjectURL(event.stream);
+      }
+      else {
+        console.log("WARNING! Added remote stream without video nor audio");
+      }
+    }
+
+    // when remote removes a stream, remove it from the local video element
+    function onRemoteStreamRemoved(event) {
+      console.log("Remove remote stream");
+      remotevid.src = "";
+      remoteaid.src = "";
+    }
+  }
+
+  updateButtons();
+  </script>
+
+
+
+</body></html>

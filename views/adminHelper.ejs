@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title><%= title %></title>
+    <link rel='stylesheet' href='/stylesheets/style.css' />
+  </head>
+  <body>
+    【ヘルパー登録】
+    <form name="reg_helper" action="/1.0/helper" method="POST" enctype="multipart/form-data">
+      名前：<input type="text" name="name"><br>
+      住所：<input type="text" name="addr"><br>
+      電話：<input type="text" name="tel"><br>
+      メール：<input type="text" name="mail"><br>
+      ロケーション：<input type="text" name="location"><br>
+      生年月日：<input type="text" name="birthday"><br>
+      コメント：<input type="textarea" name="comment"><br>
+      写真：<input type="file" name="image"><br>
+      <input type="submit" value="登録">
+    </form><br>
+    <hr>
+    【オファー登録】
+    <form name="reg_offer" action="/1.0/offer" method="POST">
+      <table>
+        <% helpers.forEach(function(item) { %>
+        <tr><td><input type="radio" name="helper_id" value="<%=item["_id"].valueOf()%>"><%= JSON.stringify(item) %></td></tr>
+        <% }) %>
+      </table>
+      開始：<input type="text" name="date_start"><br>
+      終了：<input type="text" name="date_end"><br>
+      種別：<select name="type">
+<option>なんでも</option>
+<option>種まき</option>
+<option>草取り</option>
+<option>見回り</option>
+<option>収穫</option>
+<option>箱詰め</option>
+</select><br>
+      宿必須：<input type="checkbox" name="room"><br>
+      飯必須：<input type="checkbox" name="meal"><br>
+      土産必須：<input type="checkbox" name="souvenir"><br>
+      <input type="submit" value="登録">
+    </form><br>
+    <hr>
+    【オファー一覧】
+    <table>
+      <% offers.forEach(function(item) { %>
+      <tr><td><%= JSON.stringify(item) %></td></tr>
+      <% }) %>
+    </table>
+  </body>
+</html>

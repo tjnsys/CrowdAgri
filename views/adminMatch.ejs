@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title><%= title %></title>
+    <link rel='stylesheet' href='/stylesheets/style.css' />
+  </head>
+  <body>
+    【マッチング一覧】
+    <table>
+      <% matchings.forEach(function(item) { %>
+      <tr><td><%= JSON.stringify(item) %></td></tr>
+      <% }) %>
+    </table>
+  </body>
+</html>
